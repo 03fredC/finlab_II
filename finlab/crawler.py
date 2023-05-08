@@ -823,7 +823,7 @@ def merge(twe, otc, t2o):
     t2o2 = {k:v for k,v in t2o.items() if k in otc.columns}
     otc = otc[list(t2o2.keys())]
     otc = otc.rename(columns=t2o2)
-    twe = twe[otc.columns & twe.columns]
+    twe = twe[otc.columns.intersection(twe.columns)]
 
     return twe.append(otc)
 
