@@ -27,7 +27,7 @@ def import_or_install(package):
         __import__(package)
     except ImportError:
         print('Please install lxml(pip install lxml)')
-
+        
     # try:
     #     versions = [int(i) for i in pandas.__version__.split('.')]
     #     assert (versions[0] == 1) & (versions[1] >= 1) & (versions[2] >= 4)
@@ -387,29 +387,25 @@ def combine_index(df, n1, n2):
         ' ' + df[n2].astype(str).str.replace(' ', '')).drop([n1, n2], axis=1)
 
 def crawl_benchmark(date):
-    df=crawl_gitlab_backup('benchmark',date)
-    if df is not None:
-        return df
-    else:
-        date_str = date.strftime('%Y%m%d')
-        res = requests_get("https://www.twse.com.tw/exchangeReport/MI_5MINS_INDEX?response=csv&date=" +
-                           date_str + "&_=1544020420045")
+    date_str = date.strftime('%Y%m%d')
+    res = requests_get("https://www.twse.com.tw/rwd/zh/TAIEX/MI_5MINS_INDEX?response=csv&date=" +
+                       date_str + "&_=1544020420045")
 
-        # 利用 pandas 將資料整理成表格
+    # 利用 pandas 將資料整理成表格
 
-        if len(res.text) < 10:
-            return pd.DataFrame()
+    if len(res.text) < 10:
+        return pd.DataFrame()
 
-        df = pd.read_csv(StringIO(res.text.replace("=","")), header=1, index_col='時間')
+    df = pd.read_csv(StringIO(res.text.replace("=","")), header=1, index_col='時間')
 
-        # 資料處理
+    # 資料處理
 
-        df = df.dropna(how='all', axis=0).dropna(how='all', axis=1)
-        df.index = pd.to_datetime(date.strftime('%Y %m %d ') + pd.Series(df.index))
-        df = df.apply(lambda s: s.astype(str).str.replace(",", "").astype(float))
-        df = df.reset_index().rename(columns={'時間':'date'})
-        df['stock_id'] = '台股指數'
-        return df.set_index(['stock_id', 'date'])
+    df = df.dropna(how='all', axis=0).dropna(how='all', axis=1)
+    df.index = pd.to_datetime(date.strftime('%Y %m %d ') + pd.Series(df.index))
+    df = df.apply(lambda s: s.astype(str).str.replace(",", "").astype(float))
+    df = df.reset_index().rename(columns={'時間':'date'})
+    df['stock_id'] = '台股指數'
+    return df.set_index(['stock_id', 'date'])
 
 def crawl_capital():
     res = requests_get('https://dts.twse.com.tw/opendata/t187ap03_L.csv', )
@@ -459,7 +455,7 @@ def preprocess(df, date):
 def bargin_twe(date):
     datestr = date.strftime('%Y%m%d')
 
-    res = requests_get('https://www.twse.com.tw/fund/T86?response=csv&date='\
+    res = requests_get('https://www.twse.com.tw/rwd/zh/fund/T86?response=csv&date='\
                        +datestr+'&selectType=ALLBUT0999')
     try:
         df = pd.read_csv(StringIO(res.text.replace('=','')), header=1)
@@ -555,6 +551,7 @@ def month_revenue(name, date):
         return pd.DataFrame()
 
     df = pd.concat([df for df in dfs if df.shape[1] <= 11 and df.shape[1] > 5])
+    df = df.rename(columns={'公司 代號':'公司代號'})
 
     if 'levels' in dir(df.columns):
         df.columns = df.columns.get_level_values(1)
@@ -613,14 +610,9 @@ import datetime
 import pandas as pd
 
 def crawl_twse_divide_ratio():
-
-    df=crawl_gitlab_backup('twse_divide_ratio')
-
-    if df is not None:
-        return df
-
+    start_year = datetime.datetime.now().year - 2
     datestr = datetime.datetime.now().strftime('%Y%m%d')
-    res = requests_get("https://www.twse.com.tw/exchangeReport/TWT49U?response=csv&strDate=20200101&endDate="+datestr)
+    res = requests_get(f"https://www.twse.com.tw/rwd/zh/exRight/TWT49U?response=csv&startDate={start_year}0101&endDate={datestr}")
 
     df = pd.read_csv(io.StringIO(res.text.replace("=", "")), header=1)
     df = df.dropna(thresh=5).dropna(how='all', axis=1)
@@ -640,6 +632,8 @@ def crawl_twse_divide_ratio():
     years.ffill(inplace=True)
     dates = years.astype(int).astype(str) +'/'+ df['資料日期'].str.split('年').str[1].str.replace('月', '/').str.replace('日', '')
     df['date'] = pd.to_datetime(dates, errors='coerce')
+    df['最近一次申報每股 (單位)淨值'] = np.nan
+    df['最近一次申報每股 (單位)盈餘'] = np.nan
 
     # convert to float
     float_name_list = ['除權息前收盤價', '除權息參考價', '權值+息值', '漲停價格',
@@ -653,22 +647,17 @@ def crawl_twse_divide_ratio():
     return df.set_index(['stock_id', 'date'])
 
 def crawl_otc_divide_ratio():
-
-    df = crawl_gitlab_backup('otc_divide_ratio')
-
-    if df is not None:
-        return df
-
     y = datetime.datetime.now().year
     m = datetime.datetime.now().month
     d = datetime.datetime.now().day
+    start_year = y-1911-2
 
     y = str(y-1911)
     m = str(m) if m > 9 else '0' + str(m)
     d = str(d) if d > 9 else '0' + str(d)
 
     datestr = '%s/%s/%s' % (y,m,d)
-    res_otc = requests_get('https://www.tpex.org.tw/web/stock/exright/dailyquo/exDailyQ_result.php?l=zh-tw&d=109/01/02&ed=' + datestr)
+    res_otc = requests_get(f'https://www.tpex.org.tw/web/stock/exright/dailyquo/exDailyQ_result.php?l=zh-tw&d={start_year}/01/02&ed={datestr}')
 
     df = pd.DataFrame(json.loads(res_otc.text)['aaData'])
     df.columns = ['除權息日期', '代號', '名稱', '除權息前收盤價', '除權息參考價',
@@ -697,13 +686,8 @@ def crawl_otc_divide_ratio():
 
 
 def crawl_twse_cap_reduction():
-    df=crawl_gitlab_backup('twse_cap_reduction')
-
-    if df is not None:
-        return df
-
     datestr = datetime.datetime.now().strftime('%Y%m%d')# 2011
-    res3 = requests_get("https://www.twse.com.tw/exchangeReport/TWTAUU?response=csv&strDate=20200101&endDate=" + datestr + "&_=1551597854043")
+    res3 = requests_get("https://www.twse.com.tw/rwd/zh/reducation/TWTAUU?response=csv&startDate=20200101&endDate=" + datestr + "&_=1551597854043")
 
     df = pd.read_csv(io.StringIO(res3.text), header=1)
     df = df.dropna(thresh=5).dropna(how='all',axis=1)
@@ -717,12 +701,6 @@ def crawl_twse_cap_reduction():
     return df.set_index(['stock_id', 'date'])
 
 def crawl_otc_cap_reduction():
-
-    df=crawl_gitlab_backup('otc_cap_reduction')
-
-    if df is not None:
-        return df
-
     y = datetime.datetime.now().year
     m = datetime.datetime.now().month
     d = datetime.datetime.now().day
@@ -732,7 +710,7 @@ def crawl_otc_cap_reduction():
     d = str(d) if d > 9 else '0' + str(d)
 
     datestr = '%s/%s/%s' % (y,m,d)
-    res4 = requests_get("https://www.tpex.org.tw/web/stock/exright/revivt/revivt_result.php?l=zh-tw&d=102/01/01&ed="+datestr)
+    res4 = requests_get("https://www.tpex.org.tw/web/stock/exright/revivt/revivt_result.php?l=zh-tw&d=109/01/01&ed="+datestr)
 
     df = pd.DataFrame(json.loads(res4.text)['aaData'])
 
@@ -823,19 +801,12 @@ def merge(twe, otc, t2o):
     t2o2 = {k:v for k,v in t2o.items() if k in otc.columns}
     otc = otc[list(t2o2.keys())]
     otc = otc.rename(columns=t2o2)
-    twe = twe[otc.columns.intersection(twe.columns)]
+    twe = twe[otc.columns & twe.columns]
 
     return twe.append(otc)
 
 
 def crawl_price(date):
-
-    df=crawl_gitlab_backup('price',date)
-    print(1,df)
-
-    if df is not None:
-        return df
-
     dftwe = price_twe(date)
     time.sleep(5)
     dfotc = price_otc(date)
@@ -847,11 +818,6 @@ def crawl_price(date):
 
 
 def crawl_bargin(date):
-
-    df=crawl_gitlab_backup('bargin',date)
-    if df is not None:
-        return df
-
     dftwe = bargin_twe(date)
     dfotc = bargin_otc(date)
     if len(dftwe) != 0 and len(dfotc) != 0:
@@ -861,12 +827,6 @@ def crawl_bargin(date):
 
 
 def crawl_monthly_report(date):
-
-    df=crawl_gitlab_backup('monthly_report',date)
-
-    if df is not None:
-        return df
-
     dftwe = month_revenue('sii', date)
     time.sleep(5)
     dfotc = month_revenue('otc', date)
@@ -876,12 +836,6 @@ def crawl_monthly_report(date):
         return pd.DataFrame()
 
 def crawl_pe(date):
-
-    df=crawl_gitlab_backup('pe',date)
-
-    if df is not None:
-        return df
-
     dftwe = pe_twe(date)
     dfotc = pe_otc(date)
     if len(dftwe) != 0 and len(dfotc) != 0:
@@ -985,25 +939,25 @@ def to_pickle(df, name):
         check_monthly_revenue()
 
     if os.path.isfile(fname):
-
+        
         print('read pickle')
         old_df = pd.read_pickle(fname)
         gc.collect()
-
+        
         print('append pickle')
         old_df = old_df.append(df, sort=False)
         gc.collect()
-
+        
         print('remove duplicates')
         old_df.reset_index(inplace=True)
         old_df.drop_duplicates(['stock_id', 'date'], inplace=True)
         old_df.set_index(['stock_id', 'date'], inplace=True)
         gc.collect()
-
+        
         print('sort index')
         old_df.sort_index(inplace=True)
         gc.collect()
-
+        
         print('save pickle')
         old_df.to_pickle(newfname)
         os.remove(fname)
@@ -1015,7 +969,7 @@ def to_pickle(df, name):
 
     if not os.path.isfile(date_range_record_file):
         pickle.dump({}, open(date_range_record_file, 'wb'))
-
+    
     print('save date')
     dates = pickle.load(open(date_range_record_file, 'rb'))
     dates[name] = (old_df.index.levels[1][0], old_df.index.levels[1][-1])
@@ -1344,7 +1298,7 @@ def patch2019(df):
 
 def read_html2019(file):
     dfs = pd.read_html(file)
-    return [pd.DataFrame(), patch2019(dfs[0].astype(str)), patch2019(dfs[1].astype(str)), patch2019(dfs[2].astype(str))]
+    return [pd.DataFrame(), patch2019(dfs[0]), patch2019(dfs[1]), patch2019(dfs[2])]
 
 
 import re
@@ -1499,7 +1453,7 @@ def fill_season4(tbs):
 
         if len(df3) == 0:
             continue
-
+            
         # calculate the differences of income_sheet_cumulate to get income_sheet single season
         diff = df4 - df3
         diff = diff.drop(['date'], axis=1)[overlap_columns]
@@ -1538,7 +1492,7 @@ def to_db(tbs):
 
 
 def html2db(year, season):
-
+ 
     pack_htmls(year, season, os.path.join('history', 'financial_statement', str(year) + str(season)))
     gc.collect()
     d = get_all_pickles(os.path.join('history', 'financial_statement'))
@@ -1547,10 +1501,10 @@ def html2db(year, season):
     tbs = combine(d)
     del d
     gc.collect()
-
+    
     tbs['income_sheet'] = fill_season4(tbs)
     gc.collect()
-
+    
     to_db(tbs)
     gc.collect()
 
@@ -1601,7 +1555,7 @@ def commit(*commit_tables):
         commit_tables = tnames
 
     for fname, tname in zip(fnames, tnames):
-
+        
         gc.collect()
 
         if tname not in commit_tables:
@@ -1612,10 +1566,10 @@ def commit(*commit_tables):
 
         fdir = os.path.join(fitems, tname)
 
-        if (os.path.isdir(fdir) and
-            os.path.getmtime(fname) < os.path.getmtime(fdir) and
+        if (os.path.isdir(fdir) and 
+            os.path.getmtime(fname) < os.path.getmtime(fdir) and 
             len(os.listdir(fdir)) != 0):
-
+            
             print("已經成功commit過", tname, "了，跳過！")
             continue
 
@@ -1650,11 +1604,11 @@ def commit(*commit_tables):
 
         if tname == 'monthly_report':
             check_monthly_revenue()
-
+        
         if str(set(df.dtypes)) != "{dtype('float64')}":
             df = df.apply(lambda s: pd.to_numeric(s, errors='coerce'))
         gc.collect()
-
+        
         if tname != 'benchmark':
             df[df == 0] = np.nan
         gc.collect()
@@ -1664,9 +1618,9 @@ def commit(*commit_tables):
 
         items = list(df.columns)
         df.reset_index(inplace=True)
-
+        
         if tname != 'benchmark':
-
+        
             df = df.pivot("date", "stock_id")
             gc.collect()
 

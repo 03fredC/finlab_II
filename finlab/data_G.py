@@ -100,10 +100,13 @@ class Data():
     def get_adj(self, name):
         
         def adj_holiday(item, df):
-            all_index = (df.index | item.index).sort_values()
+            
+            #all_index = (df.index | item.index).sort_values()
+            all_index = df.index.union(item.index).sort_values()
             all_index = all_index[all_index >= item.index[0]]
 
-            df = df.reindex(all_index)
+            #df = df.reindex(all_index)
+            df = df.reindex(df.index.union(item.index))
             group = all_index.isin(item.index).cumsum()
             df = df.groupby(group).mean()
             df.index = item.index
